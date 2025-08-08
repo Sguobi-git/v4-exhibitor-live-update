@@ -1,3 +1,4 @@
+# app.py - Updated with Direct Google Sheets Integration
 from flask import Flask, jsonify, request, send_from_directory, send_file
 from flask_cors import CORS
 from datetime import datetime, timedelta
@@ -6,8 +7,8 @@ import logging
 import os
 import json
 
-# Import the Google Sheets manager
-from sheets_integration import GoogleSheetsManager
+# Import the Direct Google Sheets manager (no Abacus AI)
+from direct_google_sheets_manager import DirectGoogleSheetsManager
 
 # Initialize Flask app with static folder for React build
 app = Flask(__name__, static_folder='frontend/build', static_url_path='')
@@ -19,7 +20,7 @@ logger = logging.getLogger(__name__)
 
 # SMART CACHING SYSTEM - Allows manual refresh override
 CACHE = {}
-CACHE_DURATION = 120  # 2 minutes cache for auto-refresh
+CACHE_DURATION = 30  # 30 seconds cache for frequent updates (like your Streamlit app)
 FORCE_REFRESH_PARAM = 'force_refresh'
 
 def get_from_cache(key, allow_cache=True):
@@ -59,18 +60,18 @@ def get_credentials():
         logger.error(f"Error setting up credentials: {e}")
         return None
 
-# Initialize Google Sheets Manager
+# Initialize Direct Google Sheets Manager
 credentials_path = get_credentials()
 if credentials_path:
-    gs_manager = GoogleSheetsManager(credentials_path)
+    gs_manager = DirectGoogleSheetsManager(credentials_path)
 else:
     gs_manager = None
     logger.warning("No valid credentials found - using mock data only")
 
-# Your Google Sheet ID
-SHEET_ID = "1dYeok-Dy_7a03AhPDLV2NNmGbRNoCD3q0zaAHPwxxCE"
+# Your Google Sheet ID - NOW SUPPORTS MULTIPLE SHEETS!
+SHEET_ID = "1_yBu2Rx4UGcSL04r0aAMyZDHbpuTKrJK9KavEeanZXs"  # Your new sheet with multiple sheets
 
-# Mock data for testing (replace with actual Google Sheets call)
+# Mock data for testing (fallback when Google Sheets unavailable)
 def get_mock_orders():
     return [
         {
@@ -98,37 +99,11 @@ def get_mock_orders():
             'order_date': 'June 13, 2025',
             'comments': '',
             'section': 'Section A'
-        },
-        {
-            'id': 'ORD-2025-003',
-            'booth_number': 'B-156',
-            'exhibitor_name': 'GreenWave Energy',
-            'item': 'Marketing Materials Bundle',
-            'description': 'Banners, brochures, business cards, and promotional items',
-            'color': 'Green',
-            'quantity': 5,
-            'status': 'delivered',
-            'order_date': 'June 12, 2025',
-            'comments': 'Eco-friendly materials requested',
-            'section': 'Section B'
-        },
-        {
-            'id': 'ORD-2025-004',
-            'booth_number': 'C-089',
-            'exhibitor_name': 'SmartHealth Corp',
-            'item': 'Audio-Visual Equipment',
-            'description': 'Professional sound system, microphones, and presentation equipment',
-            'color': 'White',
-            'quantity': 1,
-            'status': 'in-process',
-            'order_date': 'June 14, 2025',
-            'comments': 'Medical grade equipment required',
-            'section': 'Section C'
         }
     ]
 
 def load_orders_from_sheets(force_refresh=False):
-    """Load orders from Google Sheets with smart caching"""
+    """Load orders from Google Sheets with smart caching - SUPPORTS MULTIPLE SHEETS"""
     cache_key = "all_orders"
     
     # Check cache first (unless force refresh)
@@ -144,27 +119,14 @@ def load_orders_from_sheets(force_refresh=False):
             set_cache(cache_key, mock_data)
             return mock_data
             
-        # Get all orders from Google Sheets
-        all_orders = []
-        data = gs_manager.get_data(SHEET_ID, "Orders")
+        # Get all orders from ALL sheets (main + sections) - MULTIPLE SHEETS SUPPORT!
+        all_orders = gs_manager.get_all_orders(SHEET_ID)
         
-        # FIX: Handle both list and dataframe returns
-        if data and len(data) > 0:
-            # If it's a list (not empty), parse it
-            if isinstance(data, list):
-                all_orders = gs_manager.parse_orders_data(data)
-                logger.info(f"Loaded {len(all_orders)} orders from Google Sheets (direct)")
-            else:
-                # If it has .empty attribute (pandas DataFrame)
-                if hasattr(data, 'empty') and not data.empty:
-                    all_orders = gs_manager.parse_orders_data(data)
-                    logger.info(f"Loaded {len(all_orders)} orders from Google Sheets (dataframe)")
-            
-            if all_orders:
-                set_cache(cache_key, all_orders)
-                if force_refresh:
-                    logger.info("🔄 FORCE REFRESH: Fresh data loaded from Google Sheets")
-                return all_orders
+        if all_orders:
+            set_cache(cache_key, all_orders)
+            if force_refresh:
+                logger.info("🔄 FORCE REFRESH: Fresh data loaded from Google Sheets (multiple sheets)")
+            return all_orders
         
         logger.warning("No data found in Google Sheets, using mock data")
         mock_data = get_mock_orders()
@@ -178,17 +140,48 @@ def load_orders_from_sheets(force_refresh=False):
         set_cache(cache_key, mock_data)
         return mock_data
 
-def map_status(sheet_status):
-    """Map Google Sheets status to React app status"""
-    status_mapping = {
-        'Delivered': 'delivered',
-        'Received': 'delivered',
-        'Out for delivery': 'out-for-delivery',
-        'In route from warehouse': 'in-route',
-        'In Process': 'in-process',
-        'cancelled': 'cancelled'
-    }
-    return status_mapping.get(sheet_status, 'in-process')
+def load_exhibitors_from_sheets(force_refresh=False):
+    """Load exhibitors from Google Sheets with smart caching - SUPPORTS MULTIPLE SHEETS"""
+    cache_key = "exhibitors"
+    
+    # Check cache first (unless force refresh)
+    if not force_refresh:
+        cached_data = get_from_cache(cache_key, allow_cache=True)
+        if cached_data:
+            return cached_data
+    
+    try:
+        if not gs_manager:
+            logger.warning("No Google Sheets manager available, using fallback")
+            fallback_exhibitors = [
+                { name: 'VIVA ABACUS', booth: '9999', total_orders: 1, delivered_orders: 0 }
+            ]
+            set_cache(cache_key, fallback_exhibitors)
+            return fallback_exhibitors
+            
+        # Get all exhibitors from ALL sheets - MULTIPLE SHEETS SUPPORT!
+        exhibitors = gs_manager.get_all_exhibitors(SHEET_ID)
+        
+        if exhibitors:
+            set_cache(cache_key, exhibitors)
+            if force_refresh:
+                logger.info("🔄 FORCE REFRESH: Fresh exhibitors loaded from Google Sheets (multiple sheets)")
+            return exhibitors
+        
+        logger.warning("No exhibitors found in Google Sheets, using fallback")
+        fallback_exhibitors = [
+            { name: 'VIVA ABACUS', booth: '9999', total_orders: 1, delivered_orders: 0 }
+        ]
+        set_cache(cache_key, fallback_exhibitors)
+        return fallback_exhibitors
+        
+    except Exception as e:
+        logger.error(f"Error loading exhibitors from sheets: {e}")
+        fallback_exhibitors = [
+            { name: 'VIVA ABACUS', booth: '9999', total_orders: 1, delivered_orders: 0 }
+        ]
+        set_cache(cache_key, fallback_exhibitors)
+        return fallback_exhibitors
 
 # REACT APP SERVING ROUTES
 @app.route('/')
@@ -220,58 +213,31 @@ def health_check():
         'status': 'healthy', 
         'timestamp': datetime.now().isoformat(),
         'google_sheets_connected': gs_manager is not None,
-        'cache_size': len(CACHE)
+        'cache_size': len(CACHE),
+        'integration_type': 'Direct Google Sheets API (Multiple Sheets Supported)'
     })
 
 @app.route('/api/abacus-status', methods=['GET'])
 def abacus_status():
-    """System status endpoint"""
+    """System status endpoint - now shows Direct Google Sheets integration"""
     return jsonify({
         'platform': 'Expo Convention Contractors',
         'status': 'connected',
-        'database': 'Google Sheets Integration',
+        'database': 'Direct Google Sheets API Integration',
+        'multiple_sheets_support': True,
         'last_sync': datetime.now().isoformat(),
-        'version': '3.0.0',
-        'cache_enabled': True
+        'version': '4.0.0 - Direct Sheets',
+        'cache_enabled': True,
+        'cache_duration_seconds': CACHE_DURATION
     })
 
 @app.route('/api/exhibitors', methods=['GET'])
 def get_exhibitors():
-    """Get list of all exhibitors with smart caching"""
-    cache_key = "exhibitors"
+    """Get list of all exhibitors with smart caching - SUPPORTS MULTIPLE SHEETS"""
     force_refresh = request.args.get(FORCE_REFRESH_PARAM, 'false').lower() == 'true'
     
-    # Try cache first (unless force refresh)
-    if not force_refresh:
-        cached_data = get_from_cache(cache_key, allow_cache=True)
-        if cached_data:
-            return jsonify(cached_data)
-    
     try:
-        exhibitors = []
-        
-        # Get exhibitors from orders data
-        orders = load_orders_from_sheets(force_refresh=force_refresh)
-        exhibitors_dict = {}
-        
-        for order in orders:
-            exhibitor_name = order['exhibitor_name']
-            booth_number = order['booth_number']
-            
-            if exhibitor_name not in exhibitors_dict:
-                exhibitors_dict[exhibitor_name] = {
-                    'name': exhibitor_name,
-                    'booth': booth_number,
-                    'total_orders': 0,
-                    'delivered_orders': 0
-                }
-            
-            exhibitors_dict[exhibitor_name]['total_orders'] += 1
-            if order['status'] == 'delivered':
-                exhibitors_dict[exhibitor_name]['delivered_orders'] += 1
-        
-        exhibitors = list(exhibitors_dict.values())
-        set_cache(cache_key, exhibitors)
+        exhibitors = load_exhibitors_from_sheets(force_refresh=force_refresh)
         return jsonify(exhibitors)
         
     except Exception as e:
@@ -280,14 +246,14 @@ def get_exhibitors():
 
 @app.route('/api/orders', methods=['GET'])
 def get_all_orders():
-    """Get all orders with smart caching"""
+    """Get all orders with smart caching - SUPPORTS MULTIPLE SHEETS"""
     force_refresh = request.args.get(FORCE_REFRESH_PARAM, 'false').lower() == 'true'
     orders = load_orders_from_sheets(force_refresh=force_refresh)
     return jsonify(orders)
 
 @app.route('/api/orders/exhibitor/<exhibitor_name>', methods=['GET'])
 def get_orders_by_exhibitor(exhibitor_name):
-    """Get orders for a specific exhibitor with smart caching"""
+    """Get orders for a specific exhibitor with smart caching - SUPPORTS MULTIPLE SHEETS"""
     cache_key = f"exhibitor_{exhibitor_name}"
     force_refresh = request.args.get(FORCE_REFRESH_PARAM, 'false').lower() == 'true'
     
@@ -298,12 +264,16 @@ def get_orders_by_exhibitor(exhibitor_name):
             return jsonify(cached_data)
     
     try:
-        # Get all orders and filter
-        all_orders = load_orders_from_sheets(force_refresh=force_refresh)
-        exhibitor_orders = [
-            order for order in all_orders 
-            if order['exhibitor_name'].lower() == exhibitor_name.lower()
-        ]
+        if not gs_manager:
+            # Fallback to loading all orders and filtering
+            all_orders = load_orders_from_sheets(force_refresh=force_refresh)
+            exhibitor_orders = [
+                order for order in all_orders 
+                if order['exhibitor_name'].lower() == exhibitor_name.lower()
+            ]
+        else:
+            # Use direct method for better performance - SUPPORTS MULTIPLE SHEETS
+            exhibitor_orders = gs_manager.get_orders_for_exhibitor(SHEET_ID, exhibitor_name)
         
         delivered_count = len([o for o in exhibitor_orders if o['status'] == 'delivered'])
         
@@ -313,13 +283,14 @@ def get_orders_by_exhibitor(exhibitor_name):
             'total_orders': len(exhibitor_orders),
             'delivered_orders': delivered_count,
             'last_updated': datetime.now().isoformat(),
-            'force_refreshed': force_refresh
+            'force_refreshed': force_refresh,
+            'multiple_sheets_scanned': True
         }
         
         set_cache(cache_key, result)
         
         if force_refresh:
-            logger.info(f"🔄 MANUAL REFRESH: Fresh data for {exhibitor_name}")
+            logger.info(f"🔄 MANUAL REFRESH: Fresh data for {exhibitor_name} from multiple sheets")
         
         return jsonify(result)
         
@@ -336,7 +307,7 @@ def get_orders_by_exhibitor(exhibitor_name):
 
 @app.route('/api/orders/booth/<booth_number>', methods=['GET'])
 def get_orders_by_booth(booth_number):
-    """Get orders for a specific booth"""
+    """Get orders for a specific booth - SUPPORTS MULTIPLE SHEETS"""
     force_refresh = request.args.get(FORCE_REFRESH_PARAM, 'false').lower() == 'true'
     orders = load_orders_from_sheets(force_refresh=force_refresh)
     booth_orders = [order for order in orders if order['booth_number'] == booth_number]
@@ -345,12 +316,13 @@ def get_orders_by_booth(booth_number):
         'booth': booth_number,
         'orders': booth_orders,
         'total_orders': len(booth_orders),
-        'last_updated': datetime.now().isoformat()
+        'last_updated': datetime.now().isoformat(),
+        'multiple_sheets_scanned': True
     })
 
 @app.route('/api/stats', methods=['GET'])
 def get_stats():
-    """Get overall statistics"""
+    """Get overall statistics - SUPPORTS MULTIPLE SHEETS"""
     force_refresh = request.args.get(FORCE_REFRESH_PARAM, 'false').lower() == 'true'
     orders = load_orders_from_sheets(force_refresh=force_refresh)
     
@@ -361,10 +333,155 @@ def get_stats():
         'in_route': len([o for o in orders if o['status'] == 'in-route']),
         'out_for_delivery': len([o for o in orders if o['status'] == 'out-for-delivery']),
         'cancelled': len([o for o in orders if o['status'] == 'cancelled']),
-        'last_updated': datetime.now().isoformat()
+        'last_updated': datetime.now().isoformat(),
+        'multiple_sheets_scanned': True
     }
     
     return jsonify(stats)
+
+@app.route('/api/inventory', methods=['GET'])
+def get_inventory():
+    """Get inventory data from Google Sheets"""
+    force_refresh = request.args.get(FORCE_REFRESH_PARAM, 'false').lower() == 'true'
+    cache_key = "inventory"
+    
+    # Try cache first (unless force refresh)
+    if not force_refresh:
+        cached_data = get_from_cache(cache_key, allow_cache=True)
+        if cached_data:
+            return jsonify(cached_data)
+    
+    try:
+        if not gs_manager:
+            return jsonify([])
+        
+        inventory = gs_manager.get_inventory(SHEET_ID)
+        set_cache(cache_key, inventory)
+        
+        return jsonify(inventory)
+        
+    except Exception as e:
+        logger.error(f"Error getting inventory: {e}")
+        return jsonify([]), 500
+
+@app.route('/api/worksheets', methods=['GET'])
+def get_worksheets():
+    """Get list of all worksheets in the Google Sheet"""
+    try:
+        if not gs_manager:
+            return jsonify([])
+        
+        worksheets = gs_manager.get_worksheets(SHEET_ID)
+        
+        return jsonify({
+            'worksheets': worksheets,
+            'sections': [ws for ws in worksheets if ws.startswith('Section')],
+            'total_count': len(worksheets)
+        })
+        
+    except Exception as e:
+        logger.error(f"Error getting worksheets: {e}")
+        return jsonify({'worksheets': [], 'sections': [], 'total_count': 0}), 500
+
+# NEW WRITE OPERATIONS (like your Streamlit app)
+@app.route('/api/orders', methods=['POST'])
+def add_order():
+    """Add a new order to Google Sheets"""
+    try:
+        if not gs_manager:
+            return jsonify({'error': 'Google Sheets not available'}), 500
+        
+        order_data = request.json
+        
+        # Validate required fields
+        required_fields = ['Booth #', 'Exhibitor Name', 'Item']
+        for field in required_fields:
+            if not order_data.get(field):
+                return jsonify({'error': f'{field} is required'}), 400
+        
+        # Add current timestamp and user
+        order_data['User'] = order_data.get('User', 'API')
+        
+        # Add to main Orders sheet
+        success = gs_manager.add_order(SHEET_ID, "Orders", order_data)
+        
+        if success:
+            # Clear cache to force refresh
+            if "all_orders" in CACHE:
+                del CACHE["all_orders"]
+            if "exhibitors" in CACHE:
+                del CACHE["exhibitors"]
+            
+            return jsonify({'message': 'Order added successfully'}), 201
+        else:
+            return jsonify({'error': 'Failed to add order'}), 500
+            
+    except Exception as e:
+        logger.error(f"Error adding order: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/orders/<booth_number>/<item>/<color>', methods=['PUT'])
+def update_order_status(booth_number, item, color):
+    """Update order status in Google Sheets"""
+    try:
+        if not gs_manager:
+            return jsonify({'error': 'Google Sheets not available'}), 500
+        
+        data = request.json
+        new_status = data.get('status')
+        user = data.get('user', 'API')
+        worksheet = data.get('worksheet', 'Orders')
+        
+        if not new_status:
+            return jsonify({'error': 'Status is required'}), 400
+        
+        # Update the order
+        success = gs_manager.update_order_status(
+            SHEET_ID, worksheet, booth_number, item, color, new_status, user
+        )
+        
+        if success:
+            # Clear cache to force refresh
+            if "all_orders" in CACHE:
+                del CACHE["all_orders"]
+            if f"exhibitor_{booth_number}" in CACHE:
+                del CACHE[f"exhibitor_{booth_number}"]
+            
+            return jsonify({'message': 'Order status updated successfully'})
+        else:
+            return jsonify({'error': 'Failed to update order status'}), 500
+            
+    except Exception as e:
+        logger.error(f"Error updating order status: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/orders/<booth_number>/<item>/<color>', methods=['DELETE'])
+def delete_order(booth_number, item, color):
+    """Delete an order from Google Sheets"""
+    try:
+        if not gs_manager:
+            return jsonify({'error': 'Google Sheets not available'}), 500
+        
+        # Get section from query params if provided
+        section = request.args.get('section', '')
+        
+        # Delete the order
+        success = gs_manager.delete_order(SHEET_ID, booth_number, item, color, section)
+        
+        if success:
+            # Clear cache to force refresh
+            if "all_orders" in CACHE:
+                del CACHE["all_orders"]
+            if "exhibitors" in CACHE:
+                del CACHE["exhibitors"]
+            
+            return jsonify({'message': 'Order deleted successfully'})
+        else:
+            return jsonify({'error': 'Failed to delete order'}), 500
+            
+    except Exception as e:
+        logger.error(f"Error deleting order: {e}")
+        return jsonify({'error': str(e)}), 500
 
 @app.route('/api/clear-cache', methods=['POST'])
 def clear_cache():
