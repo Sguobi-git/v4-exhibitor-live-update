@@ -491,10 +491,6 @@ def clear_cache():
     logger.info("🗑️ Cache cleared manually")
     return jsonify({'message': 'Cache cleared successfully'})
 
-if __name__ == '__main__':
-    import os
-    port = int(os.environ.get('PORT', 5000))
-    app.run(host='0.0.0.0', port=port, debug=False)
 
 @app.route('/api/debug', methods=['GET'])
 def debug_sheets():
@@ -503,3 +499,11 @@ def debug_sheets():
         'gs_manager_initialized': gs_manager is not None,
         'credentials_path': credentials_path
     })
+
+
+if __name__ == '__main__':
+    import os
+    port = int(os.environ.get('PORT', 5000))
+    app.run(host='0.0.0.0', port=port, debug=False)
+
+
