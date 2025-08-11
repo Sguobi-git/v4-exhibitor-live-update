@@ -492,13 +492,32 @@ def clear_cache():
     return jsonify({'message': 'Cache cleared successfully'})
 
 
-@app.route('/api/debug', methods=['GET'])
+@app.route('/api/debug-sheets', methods=['GET'])
 def debug_sheets():
-    return jsonify({
-        'sheet_id_being_used': SHEET_ID,
-        'gs_manager_initialized': gs_manager is not None,
-        'credentials_path': credentials_path
-    })
+    try:
+        debug_info = {
+            'sheet_id_in_code': SHEET_ID,
+            'gs_manager_exists': gs_manager is not None,
+            'credentials_path': credentials_path
+        }
+        
+        if gs_manager:
+            # Test what worksheets we can see
+            worksheets = gs_manager.get_worksheets(SHEET_ID)
+            debug_info['worksheets_found'] = worksheets
+            
+            # Test getting raw data from the first sheet
+            raw_data = gs_manager.get_data(SHEET_ID, "Orders")
+            debug_info['raw_data_sample'] = raw_data.head(3).to_dict() if not raw_data.empty else "No data"
+            debug_info['data_shape'] = raw_data.shape if not raw_data.empty else "Empty"
+        
+        return jsonify(debug_info)
+        
+    except Exception as e:
+        return jsonify({
+            'error': str(e),
+            'sheet_id_in_code': SHEET_ID
+        })
 
 
 if __name__ == '__main__':
