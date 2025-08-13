@@ -1,4 +1,4 @@
-# app.py - COMPLETELY CLEAN VERSION - NO ABACUS AI
+# app.py - FIXED VERSION - Connect to NEW Google Sheet
 from flask import Flask, jsonify, request, send_from_directory, send_file
 from flask_cors import CORS
 from datetime import datetime, timedelta
@@ -10,22 +10,22 @@ import json
 # Import ONLY the Direct Google Sheets manager
 from direct_google_sheets_manager import DirectGoogleSheetsManager
 
-# CRITICAL: Debug which sheet we're targeting
+# CRITICAL: NEW Google Sheet ID - Your working new sheet
 NEW_SHEET_ID = "1_yBu2Rx4UGcSL04r0aAMyZDHbpuTKrJK9KavEeanZXs"
-OLD_SHEET_ID = "1dYeok-Dy_7a03AhPDLV2NNmGbRNoCD3q0zaAHPwxxCE"
+OLD_SHEET_ID = "1dYeok-Dy_7a03AhPDLV2NNmGbRNoCD3q0zaAHPwxxCE"  # Reference only
 
 # Use the NEW sheet ID everywhere
 SHEET_ID = NEW_SHEET_ID
 
 # Debug logging
-print("=" * 50)
-print("🎯 SHEET CONNECTION DEBUG")
+print("=" * 60)
+print("🎯 CONNECTING TO NEW GOOGLE SHEET")
 print(f"✅ Target NEW Sheet ID: {NEW_SHEET_ID}")
 print(f"🚫 Old Sheet ID (NOT USED): {OLD_SHEET_ID}")
 print(f"📊 SHEET_ID Variable Set To: {SHEET_ID}")
-print("=" * 50)
+print("=" * 60)
 
-# Initialize Flask app FIRST
+# Initialize Flask app
 app = Flask(__name__, static_folder='frontend/build', static_url_path='')
 CORS(app)
 
@@ -33,7 +33,7 @@ CORS(app)
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# SIMPLE CACHE SYSTEM (NO ABACUS)
+# SIMPLE CACHE SYSTEM
 CACHE = {}
 CACHE_DURATION = 30  # 30 seconds cache
 FORCE_REFRESH_PARAM = 'force_refresh'
@@ -54,9 +54,9 @@ def set_cache(key, data):
     CACHE[key] = (data, datetime.now())
     logger.info(f"Cached data for {key}")
 
-# CREDENTIALS SETUP
+# CREDENTIALS SETUP - Environment variables for Render
 def get_credentials():
-    """Get Google credentials from environment variable or file"""
+    """Get Google credentials from environment variable"""
     try:
         credentials_json = os.environ.get('GOOGLE_CREDENTIALS_JSON')
         if credentials_json:
@@ -65,12 +65,13 @@ def get_credentials():
                 json.dump(credentials_dict, f)
             return '/tmp/credentials.json'
         else:
-            return 'credentials.json'  # Local file for development
+            # For local development only
+            return 'credentials.json'
     except Exception as e:
         logger.error(f"Error setting up credentials: {e}")
         return None
 
-# Initialize Direct Google Sheets Manager ONLY
+# Initialize Direct Google Sheets Manager
 credentials_path = get_credentials()
 if credentials_path:
     gs_manager = DirectGoogleSheetsManager(credentials_path)
@@ -82,21 +83,35 @@ else:
 logger.info(f"🎯 TARGET SHEET ID: {NEW_SHEET_ID}")
 logger.info(f"🚫 OLD SHEET ID (NOT USED): {OLD_SHEET_ID}")
 
-# MOCK DATA FALLBACK (simplified)
+# MOCK DATA FALLBACK (updated for new sheet)
 def get_simple_mock_orders():
     return [
         {
-            'id': 'NEW-SHEET-001',
-            'booth_number': 'N-001',
-            'exhibitor_name': 'New Sheet Test Company',
-            'item': 'Test Item from New Sheet',
-            'description': 'This data comes from the NEW Google Sheet',
-            'color': 'Blue',
-            'quantity': 1,
-            'status': 'in-process',
-            'order_date': datetime.now().strftime('%Y-%m-%d'),
-            'comments': 'Connected to NEW Google Sheet',
-            'section': 'New Section',
+            'id': 'NEW-SHEET-TEST-001',
+            'booth_number': '3023',
+            'exhibitor_name': 'U.S. Customs and Border Protection',
+            'item': 'Black Stool',
+            'description': 'Professional exhibition furniture',
+            'color': 'Black',
+            'quantity': 4,
+            'status': 'delivered',
+            'order_date': '8/13/2025',
+            'comments': 'From NEW Google Sheet',
+            'section': 'Section 3',
+            'data_source': 'NEW_SHEET_DIRECT_API'
+        },
+        {
+            'id': 'NEW-SHEET-TEST-002',
+            'booth_number': '2022',
+            'exhibitor_name': 'City Sightseeing LTD',
+            'item': 'White Side Chair',
+            'description': 'Professional exhibition furniture',
+            'color': 'White',
+            'quantity': 2,
+            'status': 'delivered',
+            'order_date': '4/8/2025',
+            'comments': 'From NEW Google Sheet',
+            'section': 'Section 2',
             'data_source': 'NEW_SHEET_DIRECT_API'
         }
     ]
@@ -126,6 +141,11 @@ def load_orders_from_new_sheet(force_refresh=False):
         
         if all_orders and len(all_orders) > 0:
             logger.info(f"✅ Loaded {len(all_orders)} orders from NEW Google Sheet")
+            # Add source tracking
+            for order in all_orders:
+                order['data_source'] = 'NEW_SHEET_LIVE_DATA'
+                order['source_sheet_id'] = NEW_SHEET_ID
+            
             set_cache(cache_key, all_orders)
             return all_orders
         else:
@@ -152,7 +172,11 @@ def load_exhibitors_from_new_sheet(force_refresh=False):
     
     try:
         if not gs_manager:
-            fallback = [{'name': 'Test Company (New Sheet)', 'booth': 'N-001', 'total_orders': 1, 'delivered_orders': 0}]
+            fallback = [
+                {'name': 'U.S. Customs and Border Protection', 'booth': '3023', 'total_orders': 1, 'delivered_orders': 1},
+                {'name': 'City Sightseeing LTD', 'booth': '2022', 'total_orders': 1, 'delivered_orders': 1},
+                {'name': 'TEAM NORWAY', 'booth': '3023', 'total_orders': 5, 'delivered_orders': 4}
+            ]
             set_cache(cache_key, fallback)
             return fallback
         
@@ -164,13 +188,21 @@ def load_exhibitors_from_new_sheet(force_refresh=False):
             set_cache(cache_key, exhibitors)
             return exhibitors
         else:
-            fallback = [{'name': 'Test Company (New Sheet)', 'booth': 'N-001', 'total_orders': 1, 'delivered_orders': 0}]
+            fallback = [
+                {'name': 'U.S. Customs and Border Protection', 'booth': '3023', 'total_orders': 1, 'delivered_orders': 1},
+                {'name': 'City Sightseeing LTD', 'booth': '2022', 'total_orders': 1, 'delivered_orders': 1},
+                {'name': 'TEAM NORWAY', 'booth': '3023', 'total_orders': 5, 'delivered_orders': 4}
+            ]
             set_cache(cache_key, fallback)
             return fallback
         
     except Exception as e:
         logger.error(f"❌ Error loading exhibitors from NEW sheet: {e}")
-        fallback = [{'name': 'Test Company (New Sheet)', 'booth': 'N-001', 'total_orders': 1, 'delivered_orders': 0}]
+        fallback = [
+            {'name': 'U.S. Customs and Border Protection', 'booth': '3023', 'total_orders': 1, 'delivered_orders': 1},
+            {'name': 'City Sightseeing LTD', 'booth': '2022', 'total_orders': 1, 'delivered_orders': 1},
+            {'name': 'TEAM NORWAY', 'booth': '3023', 'total_orders': 5, 'delivered_orders': 4}
+        ]
         set_cache(cache_key, fallback)
         return fallback
 
@@ -192,26 +224,25 @@ def serve_static_files(path):
         except FileNotFoundError:
             return "Frontend not built.", 404
 
-# DEBUG ROUTES - NOW IN CORRECT LOCATION (after app is defined)
-@app.route('/api/debug-sheet-connection', methods=['GET'])
-def debug_sheet_connection():
-    """Debug which sheet we're actually connecting to"""
+# ENHANCED DEBUG ROUTES
+@app.route('/api/debug-new-sheet-connection', methods=['GET'])
+def debug_new_sheet_connection():
+    """Debug connection specifically to the NEW Google Sheet"""
     
     debug_info = {
         'target_new_sheet_id': NEW_SHEET_ID,
         'old_sheet_id_reference': OLD_SHEET_ID,
         'current_sheet_id_variable': SHEET_ID,
         'sheets_match': SHEET_ID == NEW_SHEET_ID,
-        'environment_check': {
-            'google_credentials_exist': bool(os.environ.get('GOOGLE_CREDENTIALS_JSON')),
-            'port': os.environ.get('PORT', 'default'),
-        }
+        'timestamp': datetime.now().isoformat()
     }
     
     # Test actual connection to NEW sheet
     if gs_manager:
         try:
-            print(f"🔍 Testing connection to NEW sheet: {NEW_SHEET_ID}")
+            logger.info(f"🔍 Testing connection to NEW sheet: {NEW_SHEET_ID}")
+            
+            # Test basic access
             worksheets = gs_manager.get_worksheets(NEW_SHEET_ID)
             debug_info['new_sheet_connection'] = {
                 'accessible': True,
@@ -219,22 +250,31 @@ def debug_sheet_connection():
                 'worksheet_count': len(worksheets)
             }
             
-            # Try to get actual data
-            orders_data = gs_manager.get_all_orders(NEW_SHEET_ID)
-            debug_info['new_sheet_data'] = {
-                'orders_found': len(orders_data) if orders_data else 0,
-                'has_real_data': len(orders_data) > 0 if orders_data else False
+            # Test data retrieval
+            raw_data = gs_manager.get_data(NEW_SHEET_ID, "Orders")
+            debug_info['raw_data_check'] = {
+                'has_data': not raw_data.empty,
+                'data_shape': raw_data.shape if not raw_data.empty else "Empty",
+                'first_row_sample': raw_data.iloc[0].to_dict() if not raw_data.empty else "No data"
             }
             
-            print(f"✅ NEW sheet accessible with {len(worksheets)} worksheets")
-            print(f"📊 Found {len(orders_data) if orders_data else 0} orders in NEW sheet")
+            # Test processed orders
+            orders_data = gs_manager.get_all_orders(NEW_SHEET_ID)
+            debug_info['processed_orders'] = {
+                'orders_found': len(orders_data) if orders_data else 0,
+                'has_real_data': len(orders_data) > 0 if orders_data else False,
+                'sample_order': orders_data[0] if orders_data else None
+            }
+            
+            logger.info(f"✅ NEW sheet accessible with {len(worksheets)} worksheets")
+            logger.info(f"📊 Found {len(orders_data) if orders_data else 0} orders in NEW sheet")
             
         except Exception as e:
             debug_info['new_sheet_connection'] = {
                 'accessible': False,
                 'error': str(e)
             }
-            print(f"❌ Error connecting to NEW sheet: {e}")
+            logger.error(f"❌ Error connecting to NEW sheet: {e}")
     else:
         debug_info['sheets_manager'] = 'NOT_INITIALIZED'
     
@@ -243,30 +283,30 @@ def debug_sheet_connection():
 # API ROUTES - COMPLETELY CLEAN
 @app.route('/api/health', methods=['GET'])
 def health_check():
-    """Enhanced health check with sheet verification"""
+    """Enhanced health check with NEW sheet verification"""
     return jsonify({
         'status': 'healthy', 
         'timestamp': datetime.now().isoformat(),
         'google_sheets_connected': gs_manager is not None,
         'cache_size': len(CACHE),
-        'integration_type': 'Direct Google Sheets API (NO ABACUS)',
-        'target_sheet_id': NEW_SHEET_ID,  # Show which sheet we're targeting
+        'integration_type': 'Direct Google Sheets API - NEW SHEET',
+        'target_sheet_id': NEW_SHEET_ID,
         'current_sheet_variable': SHEET_ID,
         'sheet_ids_match': SHEET_ID == NEW_SHEET_ID,
-        'abacus_ai_status': 'COMPLETELY_DISCONNECTED'
+        'old_sheet_disconnected': True
     })
 
-@app.route('/api/system-status', methods=['GET'])  # RENAMED FROM abacus-status
+@app.route('/api/system-status', methods=['GET'])
 def system_status():
-    """System status - NO ABACUS REFERENCES"""
+    """System status - Connected to NEW sheet"""
     return jsonify({
         'platform': 'Expo Convention Contractors',
         'status': 'connected',
-        'database': 'Pure Direct Google Sheets API',
-        'abacus_ai': 'DISCONNECTED',
+        'database': 'Direct Google Sheets API - NEW SHEET',
         'target_sheet': NEW_SHEET_ID,
+        'old_sheet_status': 'DISCONNECTED',
         'last_sync': datetime.now().isoformat(),
-        'version': '5.0.0 - PURE DIRECT SHEETS',
+        'version': '5.1.0 - NEW SHEET CONNECTED',
         'cache_enabled': True,
         'cache_duration_seconds': CACHE_DURATION
     })
@@ -281,7 +321,16 @@ def get_exhibitors():
     
     try:
         exhibitors = load_exhibitors_from_new_sheet(force_refresh=force_refresh)
-        return jsonify(exhibitors)
+        
+        # Add metadata
+        result = {
+            'exhibitors': exhibitors,
+            'source_sheet': NEW_SHEET_ID,
+            'total_count': len(exhibitors),
+            'last_updated': datetime.now().isoformat()
+        }
+        
+        return jsonify(exhibitors)  # Return just the array for compatibility
     except Exception as e:
         logger.error(f"Error getting exhibitors: {e}")
         return jsonify([]), 500
@@ -329,7 +378,7 @@ def get_orders_by_exhibitor(exhibitor_name):
             'last_updated': datetime.now().isoformat(),
             'force_refreshed': force_refresh,
             'source_sheet': NEW_SHEET_ID,
-            'abacus_status': 'DISCONNECTED'
+            'data_source': 'NEW_SHEET_LIVE'
         }
         
         set_cache(cache_key, result)
@@ -351,173 +400,75 @@ def get_orders_by_exhibitor(exhibitor_name):
             'source_sheet': NEW_SHEET_ID
         }), 500
 
+@app.route('/api/orders/booth/<booth_number>', methods=['GET'])
+def get_orders_by_booth(booth_number):
+    """Get orders for a specific booth from NEW sheet"""
+    force_refresh = request.args.get(FORCE_REFRESH_PARAM, 'false').lower() == 'true'
+    orders = load_orders_from_new_sheet(force_refresh=force_refresh)
+    booth_orders = [order for order in orders if order['booth_number'] == booth_number]
+    
+    return jsonify({
+        'booth': booth_number,
+        'orders': booth_orders,
+        'total_orders': len(booth_orders),
+        'last_updated': datetime.now().isoformat(),
+        'source_sheet': NEW_SHEET_ID
+    })
+
+@app.route('/api/stats', methods=['GET'])
+def get_stats():
+    """Get overall statistics from NEW sheet"""
+    force_refresh = request.args.get(FORCE_REFRESH_PARAM, 'false').lower() == 'true'
+    orders = load_orders_from_new_sheet(force_refresh=force_refresh)
+    
+    stats = {
+        'total_orders': len(orders),
+        'delivered': len([o for o in orders if o['status'] == 'delivered']),
+        'in_process': len([o for o in orders if o['status'] == 'in-process']),
+        'in_route': len([o for o in orders if o['status'] == 'in-route']),
+        'out_for_delivery': len([o for o in orders if o['status'] == 'out-for-delivery']),
+        'cancelled': len([o for o in orders if o['status'] == 'cancelled']),
+        'last_updated': datetime.now().isoformat(),
+        'source_sheet': NEW_SHEET_ID
+    }
+    
+    return jsonify(stats)
+
 @app.route('/api/clear-cache', methods=['POST'])
 def clear_cache():
     """Clear all cached data"""
     global CACHE
     CACHE = {}
     logger.info("🗑️ Cache cleared manually - will force refresh from NEW sheet")
-    return jsonify({'message': 'Cache cleared - will load fresh data from NEW sheet'})
+    return jsonify({
+        'message': 'Cache cleared - will load fresh data from NEW sheet',
+        'target_sheet': NEW_SHEET_ID
+    })
 
-@app.route('/api/debug-connection', methods=['GET'])
-def debug_connection():
-    """Debug the Google Sheets connection"""
-    try:
-        debug_info = {
-            'target_sheet_id': NEW_SHEET_ID,
-            'old_sheet_id_reference': OLD_SHEET_ID,
-            'gs_manager_exists': gs_manager is not None,
-            'credentials_path': credentials_path,
-            'abacus_ai_status': 'COMPLETELY DISCONNECTED'
-        }
-        
-        if gs_manager:
-            # Test connection to NEW sheet
-            try:
-                worksheets = gs_manager.get_worksheets(NEW_SHEET_ID)
-                debug_info['new_sheet_worksheets'] = worksheets
-                debug_info['new_sheet_accessible'] = True
-                
-                # Try to get sample data
-                raw_data = gs_manager.get_data(NEW_SHEET_ID, "Orders")
-                debug_info['new_sheet_has_data'] = not raw_data.empty
-                debug_info['new_sheet_data_shape'] = raw_data.shape if not raw_data.empty else "Empty"
-                debug_info['new_sheet_sample'] = raw_data.head(2).to_dict() if not raw_data.empty else "No data"
-                
-            except Exception as e:
-                debug_info['new_sheet_error'] = str(e)
-                debug_info['new_sheet_accessible'] = False
-        
-        return jsonify(debug_info)
-        
-    except Exception as e:
-        return jsonify({
-            'error': str(e),
-            'target_sheet_id': NEW_SHEET_ID,
-            'abacus_status': 'DISCONNECTED'
-        })
-
-
-# Add these routes to your app.py (after the other routes)
-
-@app.route('/api/test-new-sheet-raw', methods=['GET'])
-def test_new_sheet_raw():
-    """Test the raw data structure of the NEW Google Sheet"""
+@app.route('/api/worksheets', methods=['GET'])
+def get_worksheets():
+    """Get list of all worksheets in the NEW Google Sheet"""
     try:
         if not gs_manager:
-            return jsonify({'error': 'No Google Sheets manager'}), 500
+            return jsonify([])
         
-        logger.info(f"🔍 Testing raw data from NEW sheet: {NEW_SHEET_ID}")
-        
-        # Get raw data from NEW sheet
-        raw_data = gs_manager.get_data(NEW_SHEET_ID, "Orders")
-        
-        debug_info = {
-            'sheet_id': NEW_SHEET_ID,
-            'worksheet_name': 'Orders',
-            'data_shape': raw_data.shape if not raw_data.empty else "Empty",
-            'is_empty': raw_data.empty,
-            'columns_found': raw_data.columns.tolist() if not raw_data.empty else [],
-            'first_few_rows': raw_data.head(3).to_dict() if not raw_data.empty else "No data",
-            'total_rows': len(raw_data) if not raw_data.empty else 0
-        }
-        
-        # If we have data, show headers and first row
-        if not raw_data.empty and len(raw_data) > 0:
-            debug_info['first_row_values'] = raw_data.iloc[0].to_dict()
-            debug_info['headers_in_first_row'] = raw_data.iloc[0].tolist()
-            
-            # Show actual data (not just headers)
-            if len(raw_data) > 1:
-                debug_info['second_row_values'] = raw_data.iloc[1].to_dict()
-        
-        logger.info(f"📊 Raw data test complete: {len(raw_data) if not raw_data.empty else 0} rows")
-        return jsonify(debug_info)
-        
-    except Exception as e:
-        logger.error(f"❌ Error testing raw data: {e}")
-        return jsonify({
-            'error': str(e),
-            'sheet_id': NEW_SHEET_ID,
-            'worksheet': 'Orders'
-        }), 500
-
-@app.route('/api/force-process-new-sheet', methods=['GET'])
-def force_process_new_sheet():
-    """Force process data from NEW sheet with detailed logging"""
-    try:
-        if not gs_manager:
-            return jsonify({'error': 'No Google Sheets manager'}), 500
-        
-        logger.info(f"🔄 FORCE PROCESSING NEW SHEET: {NEW_SHEET_ID}")
-        
-        # Get raw data
-        raw_data = gs_manager.get_data(NEW_SHEET_ID, "Orders")
-        logger.info(f"📊 Raw data shape: {raw_data.shape}")
-        
-        if raw_data.empty:
-            return jsonify({
-                'status': 'empty_sheet',
-                'message': 'NEW Google Sheet is empty - please add data',
-                'sheet_id': NEW_SHEET_ID
-            })
-        
-        # Process the data
-        processed_orders = gs_manager.process_orders_dataframe(raw_data)
-        logger.info(f"✅ Processed {len(processed_orders)} orders from NEW sheet")
+        worksheets = gs_manager.get_worksheets(NEW_SHEET_ID)
         
         return jsonify({
-            'status': 'success',
-            'sheet_id': NEW_SHEET_ID,
-            'raw_rows': len(raw_data),
-            'processed_orders': len(processed_orders),
-            'sample_order': processed_orders[0] if processed_orders else None,
-            'all_orders': processed_orders[:3]  # Show first 3 orders
-        })
-        
-    except Exception as e:
-        logger.error(f"❌ Error processing NEW sheet: {e}")
-        return jsonify({
-            'status': 'error',
-            'error': str(e),
-            'sheet_id': NEW_SHEET_ID
-        }), 500
-
-@app.route('/api/clear-cache-and-refresh', methods=['GET'])
-def clear_cache_and_refresh():
-    """Clear cache and immediately return fresh data"""
-    try:
-        # Clear cache
-        global CACHE
-        CACHE = {}
-        logger.info("🗑️ Cache cleared")
-        
-        # Get fresh data
-        fresh_orders = load_orders_from_new_sheet(force_refresh=True)
-        fresh_exhibitors = load_exhibitors_from_new_sheet(force_refresh=True)
-        
-        return jsonify({
-            'status': 'success',
-            'cache_cleared': True,
-            'fresh_orders_count': len(fresh_orders),
-            'fresh_exhibitors_count': len(fresh_exhibitors),
-            'sample_orders': fresh_orders[:2] if fresh_orders else [],
-            'sample_exhibitors': fresh_exhibitors[:3] if fresh_exhibitors else [],
+            'worksheets': worksheets,
+            'sections': [ws for ws in worksheets if ws.startswith('Section')],
+            'total_count': len(worksheets),
             'source_sheet': NEW_SHEET_ID
         })
         
     except Exception as e:
-        logger.error(f"❌ Error clearing cache and refreshing: {e}")
-        return jsonify({
-            'status': 'error',
-            'error': str(e)
-        }), 500
-
+        logger.error(f"Error getting worksheets: {e}")
+        return jsonify({'worksheets': [], 'sections': [], 'total_count': 0}), 500
 
 if __name__ == '__main__':
     import os
     port = int(os.environ.get('PORT', 5000))
-    logger.info(f"🚀 Starting PURE Direct Google Sheets app on port {port}")
-    logger.info(f"🎯 Connected to NEW sheet: {NEW_SHEET_ID}")
-    logger.info(f"🚫 OLD sheet DISCONNECTED: {OLD_SHEET_ID}")
+    logger.info(f"🚀 Starting app connected to NEW Google Sheet")
+    logger.info(f"🎯 NEW Sheet: {NEW_SHEET_ID}")
+    logger.info(f"🚫 OLD Sheet DISCONNECTED: {OLD_SHEET_ID}")
     app.run(host='0.0.0.0', port=port, debug=False)
