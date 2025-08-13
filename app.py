@@ -10,12 +10,6 @@ import json
 # Import ONLY the Direct Google Sheets manager
 from direct_google_sheets_manager import DirectGoogleSheetsManager
 
-
-
-
-# Add this to the TOP of your app.py file after imports
-import os
-
 # CRITICAL: Debug which sheet we're targeting
 NEW_SHEET_ID = "1_yBu2Rx4UGcSL04r0aAMyZDHbpuTKrJK9KavEeanZXs"
 OLD_SHEET_ID = "1dYeok-Dy_7a03AhPDLV2NNmGbRNoCD3q0zaAHPwxxCE"
@@ -31,80 +25,7 @@ print(f"🚫 Old Sheet ID (NOT USED): {OLD_SHEET_ID}")
 print(f"📊 SHEET_ID Variable Set To: {SHEET_ID}")
 print("=" * 50)
 
-# Add this debug route to your app.py
-@app.route('/api/debug-sheet-connection', methods=['GET'])
-def debug_sheet_connection():
-    """Debug which sheet we're actually connecting to"""
-    
-    debug_info = {
-        'target_new_sheet_id': NEW_SHEET_ID,
-        'old_sheet_id_reference': OLD_SHEET_ID,
-        'current_sheet_id_variable': SHEET_ID,
-        'sheets_match': SHEET_ID == NEW_SHEET_ID,
-        'environment_check': {
-            'google_credentials_exist': bool(os.environ.get('GOOGLE_CREDENTIALS_JSON')),
-            'port': os.environ.get('PORT', 'default'),
-        }
-    }
-    
-    # Test actual connection to NEW sheet
-    if gs_manager:
-        try:
-            print(f"🔍 Testing connection to NEW sheet: {NEW_SHEET_ID}")
-            worksheets = gs_manager.get_worksheets(NEW_SHEET_ID)
-            debug_info['new_sheet_connection'] = {
-                'accessible': True,
-                'worksheets': worksheets,
-                'worksheet_count': len(worksheets)
-            }
-            
-            # Try to get actual data
-            orders_data = gs_manager.get_all_orders(NEW_SHEET_ID)
-            debug_info['new_sheet_data'] = {
-                'orders_found': len(orders_data) if orders_data else 0,
-                'has_real_data': len(orders_data) > 0 if orders_data else False
-            }
-            
-            print(f"✅ NEW sheet accessible with {len(worksheets)} worksheets")
-            print(f"📊 Found {len(orders_data) if orders_data else 0} orders in NEW sheet")
-            
-        except Exception as e:
-            debug_info['new_sheet_connection'] = {
-                'accessible': False,
-                'error': str(e)
-            }
-            print(f"❌ Error connecting to NEW sheet: {e}")
-    else:
-        debug_info['sheets_manager'] = 'NOT_INITIALIZED'
-    
-    return jsonify(debug_info)
-
-# Add this to your health check route
-@app.route('/api/health', methods=['GET'])
-def health_check():
-    """Enhanced health check with sheet verification"""
-    return jsonify({
-        'status': 'healthy', 
-        'timestamp': datetime.now().isoformat(),
-        'google_sheets_connected': gs_manager is not None,
-        'cache_size': len(CACHE),
-        'integration_type': 'Direct Google Sheets API (NO ABACUS)',
-        'target_sheet_id': NEW_SHEET_ID,  # Show which sheet we're targeting
-        'current_sheet_variable': SHEET_ID,
-        'sheet_ids_match': SHEET_ID == NEW_SHEET_ID,
-        'abacus_ai_status': 'COMPLETELY_DISCONNECTED'
-    })
-
-
-
-
-
-
-
-
-
-
-# Initialize Flask app
+# Initialize Flask app FIRST
 app = Flask(__name__, static_folder='frontend/build', static_url_path='')
 CORS(app)
 
@@ -157,10 +78,6 @@ if credentials_path:
 else:
     gs_manager = None
     logger.warning("❌ No valid credentials found")
-
-# YOUR NEW GOOGLE SHEET ID - HARDCODED TO PREVENT CONFUSION
-NEW_SHEET_ID = "1_yBu2Rx4UGcSL04r0aAMyZDHbpuTKrJK9KavEeanZXs"
-OLD_SHEET_ID = "1dYeok-Dy_7a03AhPDLV2NNmGbRNoCD3q0zaAHPwxxCE"  # For reference only
 
 logger.info(f"🎯 TARGET SHEET ID: {NEW_SHEET_ID}")
 logger.info(f"🚫 OLD SHEET ID (NOT USED): {OLD_SHEET_ID}")
@@ -275,18 +192,68 @@ def serve_static_files(path):
         except FileNotFoundError:
             return "Frontend not built.", 404
 
+# DEBUG ROUTES - NOW IN CORRECT LOCATION (after app is defined)
+@app.route('/api/debug-sheet-connection', methods=['GET'])
+def debug_sheet_connection():
+    """Debug which sheet we're actually connecting to"""
+    
+    debug_info = {
+        'target_new_sheet_id': NEW_SHEET_ID,
+        'old_sheet_id_reference': OLD_SHEET_ID,
+        'current_sheet_id_variable': SHEET_ID,
+        'sheets_match': SHEET_ID == NEW_SHEET_ID,
+        'environment_check': {
+            'google_credentials_exist': bool(os.environ.get('GOOGLE_CREDENTIALS_JSON')),
+            'port': os.environ.get('PORT', 'default'),
+        }
+    }
+    
+    # Test actual connection to NEW sheet
+    if gs_manager:
+        try:
+            print(f"🔍 Testing connection to NEW sheet: {NEW_SHEET_ID}")
+            worksheets = gs_manager.get_worksheets(NEW_SHEET_ID)
+            debug_info['new_sheet_connection'] = {
+                'accessible': True,
+                'worksheets': worksheets,
+                'worksheet_count': len(worksheets)
+            }
+            
+            # Try to get actual data
+            orders_data = gs_manager.get_all_orders(NEW_SHEET_ID)
+            debug_info['new_sheet_data'] = {
+                'orders_found': len(orders_data) if orders_data else 0,
+                'has_real_data': len(orders_data) > 0 if orders_data else False
+            }
+            
+            print(f"✅ NEW sheet accessible with {len(worksheets)} worksheets")
+            print(f"📊 Found {len(orders_data) if orders_data else 0} orders in NEW sheet")
+            
+        except Exception as e:
+            debug_info['new_sheet_connection'] = {
+                'accessible': False,
+                'error': str(e)
+            }
+            print(f"❌ Error connecting to NEW sheet: {e}")
+    else:
+        debug_info['sheets_manager'] = 'NOT_INITIALIZED'
+    
+    return jsonify(debug_info)
+
 # API ROUTES - COMPLETELY CLEAN
 @app.route('/api/health', methods=['GET'])
 def health_check():
-    """Health check - NO ABACUS REFERENCES"""
+    """Enhanced health check with sheet verification"""
     return jsonify({
         'status': 'healthy', 
         'timestamp': datetime.now().isoformat(),
         'google_sheets_connected': gs_manager is not None,
         'cache_size': len(CACHE),
-        'integration_type': 'PURE Direct Google Sheets API',
-        'target_sheet_id': NEW_SHEET_ID,
-        'abacus_ai_status': 'COMPLETELY DISCONNECTED'
+        'integration_type': 'Direct Google Sheets API (NO ABACUS)',
+        'target_sheet_id': NEW_SHEET_ID,  # Show which sheet we're targeting
+        'current_sheet_variable': SHEET_ID,
+        'sheet_ids_match': SHEET_ID == NEW_SHEET_ID,
+        'abacus_ai_status': 'COMPLETELY_DISCONNECTED'
     })
 
 @app.route('/api/system-status', methods=['GET'])  # RENAMED FROM abacus-status
@@ -429,9 +396,6 @@ def debug_connection():
             'target_sheet_id': NEW_SHEET_ID,
             'abacus_status': 'DISCONNECTED'
         })
-
-# Remove any abacus-status route entirely
-# The old route is completely removed
 
 if __name__ == '__main__':
     import os
