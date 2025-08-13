@@ -397,6 +397,123 @@ def debug_connection():
             'abacus_status': 'DISCONNECTED'
         })
 
+
+# Add these routes to your app.py (after the other routes)
+
+@app.route('/api/test-new-sheet-raw', methods=['GET'])
+def test_new_sheet_raw():
+    """Test the raw data structure of the NEW Google Sheet"""
+    try:
+        if not gs_manager:
+            return jsonify({'error': 'No Google Sheets manager'}), 500
+        
+        logger.info(f"🔍 Testing raw data from NEW sheet: {NEW_SHEET_ID}")
+        
+        # Get raw data from NEW sheet
+        raw_data = gs_manager.get_data(NEW_SHEET_ID, "Orders")
+        
+        debug_info = {
+            'sheet_id': NEW_SHEET_ID,
+            'worksheet_name': 'Orders',
+            'data_shape': raw_data.shape if not raw_data.empty else "Empty",
+            'is_empty': raw_data.empty,
+            'columns_found': raw_data.columns.tolist() if not raw_data.empty else [],
+            'first_few_rows': raw_data.head(3).to_dict() if not raw_data.empty else "No data",
+            'total_rows': len(raw_data) if not raw_data.empty else 0
+        }
+        
+        # If we have data, show headers and first row
+        if not raw_data.empty and len(raw_data) > 0:
+            debug_info['first_row_values'] = raw_data.iloc[0].to_dict()
+            debug_info['headers_in_first_row'] = raw_data.iloc[0].tolist()
+            
+            # Show actual data (not just headers)
+            if len(raw_data) > 1:
+                debug_info['second_row_values'] = raw_data.iloc[1].to_dict()
+        
+        logger.info(f"📊 Raw data test complete: {len(raw_data) if not raw_data.empty else 0} rows")
+        return jsonify(debug_info)
+        
+    except Exception as e:
+        logger.error(f"❌ Error testing raw data: {e}")
+        return jsonify({
+            'error': str(e),
+            'sheet_id': NEW_SHEET_ID,
+            'worksheet': 'Orders'
+        }), 500
+
+@app.route('/api/force-process-new-sheet', methods=['GET'])
+def force_process_new_sheet():
+    """Force process data from NEW sheet with detailed logging"""
+    try:
+        if not gs_manager:
+            return jsonify({'error': 'No Google Sheets manager'}), 500
+        
+        logger.info(f"🔄 FORCE PROCESSING NEW SHEET: {NEW_SHEET_ID}")
+        
+        # Get raw data
+        raw_data = gs_manager.get_data(NEW_SHEET_ID, "Orders")
+        logger.info(f"📊 Raw data shape: {raw_data.shape}")
+        
+        if raw_data.empty:
+            return jsonify({
+                'status': 'empty_sheet',
+                'message': 'NEW Google Sheet is empty - please add data',
+                'sheet_id': NEW_SHEET_ID
+            })
+        
+        # Process the data
+        processed_orders = gs_manager.process_orders_dataframe(raw_data)
+        logger.info(f"✅ Processed {len(processed_orders)} orders from NEW sheet")
+        
+        return jsonify({
+            'status': 'success',
+            'sheet_id': NEW_SHEET_ID,
+            'raw_rows': len(raw_data),
+            'processed_orders': len(processed_orders),
+            'sample_order': processed_orders[0] if processed_orders else None,
+            'all_orders': processed_orders[:3]  # Show first 3 orders
+        })
+        
+    except Exception as e:
+        logger.error(f"❌ Error processing NEW sheet: {e}")
+        return jsonify({
+            'status': 'error',
+            'error': str(e),
+            'sheet_id': NEW_SHEET_ID
+        }), 500
+
+@app.route('/api/clear-cache-and-refresh', methods=['GET'])
+def clear_cache_and_refresh():
+    """Clear cache and immediately return fresh data"""
+    try:
+        # Clear cache
+        global CACHE
+        CACHE = {}
+        logger.info("🗑️ Cache cleared")
+        
+        # Get fresh data
+        fresh_orders = load_orders_from_new_sheet(force_refresh=True)
+        fresh_exhibitors = load_exhibitors_from_new_sheet(force_refresh=True)
+        
+        return jsonify({
+            'status': 'success',
+            'cache_cleared': True,
+            'fresh_orders_count': len(fresh_orders),
+            'fresh_exhibitors_count': len(fresh_exhibitors),
+            'sample_orders': fresh_orders[:2] if fresh_orders else [],
+            'sample_exhibitors': fresh_exhibitors[:3] if fresh_exhibitors else [],
+            'source_sheet': NEW_SHEET_ID
+        })
+        
+    except Exception as e:
+        logger.error(f"❌ Error clearing cache and refreshing: {e}")
+        return jsonify({
+            'status': 'error',
+            'error': str(e)
+        }), 500
+
+
 if __name__ == '__main__':
     import os
     port = int(os.environ.get('PORT', 5000))
